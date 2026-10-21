@@ -1,0 +1,48 @@
+# Configuration de la zone de spawn
+spawn-zone:
+  world: Easter
+  min-x: 13
+  max-x: -11
+  min-y: 75
+  max-y: 80
+  min-z: -199
+  max-z: -180
+
+# Nombre maximum de lapins simultanés
+max-rabbits: 30
+
+# Intervalle de spawn (en ticks, 20 ticks = 1 seconde)
+spawn-interval-ticks: 250
+
+daily-limit:
+  enabled: true
+  max-per-day: 350
+  message-cooldown-seconds: 60 # secondes
+
+custom-name: "&7Attrape-moi !"
+
+messages:
+  # Variables: %daily_count%, %daily_max%, %daily_remaining%, %player%
+  rabbit-caught: ""
+  daily-limit-reached: "&7&l« &d&lEaster &8&l» &fTu as atteint la limite journaliere (&d%daily_max% lapins&7). Reviens demain."
+
+# Commande à exécuter lors du clic sur un lapin (s’exécute depuis la console)
+commands: 
+  - "points give %player% 1"
+  - "tournament custom LAPIN %player%"
+
+# Son à jouer lors du clic sur un lapin (nom de l’énumération Sound)
+click-sound: ENTITY_FIREWORK_ROCKET_BLAST
+
+# Son à jouer lors de l’apparition d’un lapin
+spawn-sound: ENTITY_ITEM_PICKUP
+
+# Particule à afficher lors de la disparition du lapin (nom de l’énumération Particle)
+particle: CLOUD
+
+golden-rabbit:
+  chance: 0.05
+  custom-name: "&eAttrape-moi !"
+  commands:
+    - "points give %player% 10"
+    - "tournament custom LAPIN %player%"
