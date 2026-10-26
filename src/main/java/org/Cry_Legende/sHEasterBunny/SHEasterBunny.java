@@ -5,7 +5,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
+import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -17,19 +19,24 @@ import org.bukkit.entity.Rabbit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
-import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
-import org.bukkit.metadata.FixedMetadataValue;
+import org.bukkit.event.world.EntitiesLoadEvent;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -42,8 +49,8 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
 
     // UUIDs des lapins en jeu
     private final Set<String> spawnedRabbits = new HashSet<>();
-    private static final String METADATA_KEY = "sHEasterBunny";
-    private static final String METADATA_KEY_GOLDEN = "goldenRabbit";
+    // Marque les lapins dorés (dans le PDC du lapin, plus de FixedMetadataValue)
+    private NamespacedKey goldenKey;
 
     // Timer de despawn
     private final Map<UUID, BukkitTask> despawnTasks = new HashMap<>();
@@ -59,8 +66,15 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
     // Compteur de respawns a executer (une par une)
     private int pendingRespawns = 0;
 
+    // data.yml : écrit hors du thread principal, au plus toutes les 10 s, et seulement si quelque chose a changé
+    private boolean dirty;
+    private long saveSeq;
+    private long writtenSeq;
+    private final Object fileLock = new Object();
+
     @Override
     public void onEnable() {
+        goldenKey = new NamespacedKey(this, "golden");
         saveDefaultConfig();
         config = getConfig();
         loadData();
@@ -81,6 +95,16 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
                 spawnRabbits();
             }
         }.runTaskTimer(this, 0, interval);
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (dirty) {
+                    dirty = false;
+                    saveDataAsync();
+                }
+            }
+        }.runTaskTimer(this, 200L, 200L);
     }
 
     @Override
@@ -113,7 +137,6 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         dataConfig = YamlConfiguration.loadConfiguration(dataFile);
 
         dailyCounterDate = dataConfig.getString("daily.date", LocalDate.now().toString());
-        resetDailyIfNeeded();
 
         if (dataConfig.contains("caughtRabbits") && dataConfig.getConfigurationSection("caughtRabbits") != null) {
             for (String key : dataConfig.getConfigurationSection("caughtRabbits").getKeys(false)) {
@@ -138,13 +161,30 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
                 }
             }
         }
+
+        // Après la lecture des compteurs : le reset du jour ne doit plus jamais vider les totaux avant qu'ils soient relus
+        resetDailyIfNeeded();
     }
 
+    /** Écriture synchrone (arrêt du plugin). */
     private void saveData() {
         if (dataConfig == null || dataFile == null) {
             return;
         }
+        writeData(snapshotData(), ++saveSeq);
+    }
 
+    /** L'instantané est pris sur le thread principal, seule l'écriture du fichier part en asynchrone. */
+    private void saveDataAsync() {
+        if (dataConfig == null || dataFile == null) {
+            return;
+        }
+        String data = snapshotData();
+        long seq = ++saveSeq;
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> writeData(data, seq));
+    }
+
+    private String snapshotData() {
         dataConfig.set("daily.date", dailyCounterDate);
         dataConfig.set("daily.counts", null);
         for (Map.Entry<UUID, Integer> entry : dailyCaughtRabbits.entrySet()) {
@@ -156,11 +196,24 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
             dataConfig.set("caughtRabbits." + entry.getKey(), entry.getValue());
         }
 
-        try {
-            dataConfig.save(dataFile);
-        } catch (IOException e) {
-            getLogger().severe("Erreur lors de la sauvegarde du fichier data.yml");
-            e.printStackTrace();
+        return dataConfig.saveToString();
+    }
+
+    private void writeData(String data, long seq) {
+        synchronized (fileLock) {
+            if (seq < writtenSeq) {
+                return; // un instantané plus récent a déjà été écrit
+            }
+            // Fichier temporaire puis remplacement : un arrêt en plein milieu ne tronque pas data.yml
+            File tmp = new File(dataFile.getParentFile(), dataFile.getName() + ".tmp");
+            try {
+                Files.writeString(tmp.toPath(), data, StandardCharsets.UTF_8);
+                Files.move(tmp.toPath(), dataFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                writtenSeq = seq;
+            } catch (IOException e) {
+                getLogger().severe("Erreur lors de la sauvegarde du fichier data.yml");
+                e.printStackTrace();
+            }
         }
     }
 
@@ -169,7 +222,7 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         if (dailyCounterDate == null || !dailyCounterDate.equals(today)) {
             dailyCounterDate = today;
             dailyCaughtRabbits.clear();
-            saveData();
+            dirty = true;
         }
     }
 
@@ -214,6 +267,26 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
      * Retourne une location de spawn ou le bloc au sol est solide
      * et ou les deux blocs au-dessus sont de l'air.
      */
+    private World spawnWorld() {
+        String name = config.getString("spawn-zone.world");
+        return name == null ? null : Bukkit.getWorld(name);
+    }
+
+    /** Son lu en config : ancien nom (ENTITY_PLAYER_LEVELUP) ou clé (minecraft:entity.player.levelup). */
+    static Sound sound(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.trim();
+        if (s.indexOf(':') >= 0 || s.indexOf('.') >= 0) {
+            NamespacedKey key = NamespacedKey.fromString(s.toLowerCase(Locale.ROOT));
+            return key == null ? null : Registry.SOUND_EVENT.get(key);
+        }
+        try {
+            return (Sound) Sound.class.getField(s.toUpperCase(Locale.ROOT)).get(null);
+        } catch (ReflectiveOperationException | ClassCastException e) {
+            return null;
+        }
+    }
+
     private Location getValidSpawnLocation(World world) {
         double configMinX = config.getDouble("spawn-zone.min-x");
         double configMaxX = config.getDouble("spawn-zone.max-x");
@@ -271,7 +344,7 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
      * Logique de spawn d'un seul lapin.
      */
     private void spawnOneRabbit() {
-        World world = Bukkit.getWorld(config.getString("spawn-zone.world"));
+        World world = spawnWorld();
         if (world == null) {
             return;
         }
@@ -286,18 +359,17 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         boolean isGolden = Math.random() < goldenChance;
         if (isGolden) {
             rabbit.setCustomName(goldenName);
-            rabbit.setMetadata(METADATA_KEY_GOLDEN, new FixedMetadataValue(this, true));
+            rabbit.getPersistentDataContainer().set(goldenKey, PersistentDataType.BYTE, (byte) 1);
         } else {
             rabbit.setCustomName(normalName);
-            rabbit.setMetadata(METADATA_KEY, new FixedMetadataValue(this, true));
         }
         rabbit.setCustomNameVisible(true);
         spawnedRabbits.add(rabbit.getUniqueId().toString());
 
-        try {
-            Sound s = Sound.valueOf(config.getString("spawn-sound"));
+        Sound s = sound(config.getString("spawn-sound"));
+        if (s != null) {
             world.playSound(spawnLocation, s, 1.0f, 1.0f);
-        } catch (Exception e) {
+        } else {
             getLogger().warning("Son de spawn invalide dans la config.");
         }
 
@@ -345,18 +417,18 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         }
 
         Location loc = rabbit.getLocation();
+        boolean isGolden = rabbit.getPersistentDataContainer().has(goldenKey, PersistentDataType.BYTE);
 
         caughtRabbits.put(player.getUniqueId(), caughtRabbits.getOrDefault(player.getUniqueId(), 0) + 1);
         if (rewardsAllowed) {
             dailyCaughtRabbits.put(player.getUniqueId(), currentDaily + 1);
         }
-        saveData();
+        dirty = true;
 
         spawnedRabbits.remove(rid.toString());
         rabbit.remove();
 
         if (rewardsAllowed) {
-            boolean isGolden = rabbit.hasMetadata(METADATA_KEY_GOLDEN);
             for (String cmd : (isGolden ? config.getStringList("golden-rabbit.commands") : config.getStringList("commands"))) {
                 if (cmd != null && !cmd.isEmpty()) {
                     Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", player.getName()));
@@ -364,10 +436,10 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
             }
         }
 
-        try {
-            Sound cs = Sound.valueOf(config.getString("click-sound"));
+        Sound cs = sound(config.getString("click-sound"));
+        if (cs != null) {
             loc.getWorld().playSound(loc, cs, 1.0f, 1.0f);
-        } catch (Exception e) {
+        } else {
             getLogger().warning("Son de clic invalide dans la config.");
         }
 
@@ -395,14 +467,30 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
     }
 
     @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        dailyLimitMessageCooldowns.remove(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler
     public void onChunkUnload(ChunkUnloadEvent event) {
+        if (spawnedRabbits.isEmpty()) {
+            return;
+        }
         Chunk chunk = event.getChunk();
         for (Iterator<String> it = spawnedRabbits.iterator(); it.hasNext(); ) {
             String uuidString = it.next();
-            Entity entity = Bukkit.getEntity(UUID.fromString(uuidString));
-            if (entity != null && entity.getLocation().getChunk().equals(chunk)) {
+            UUID rid = UUID.fromString(uuidString);
+            Entity entity = Bukkit.getEntity(rid);
+            // Comparaison par coordonnées : pas de création d'objet Chunk pour chaque lapin à chaque déchargement
+            if (entity != null && entity.getWorld().equals(chunk.getWorld())
+                && (entity.getLocation().getBlockX() >> 4) == chunk.getX()
+                && (entity.getLocation().getBlockZ() >> 4) == chunk.getZ()) {
                 entity.remove();
                 it.remove();
+                BukkitTask pending = despawnTasks.remove(rid);
+                if (pending != null) {
+                    pending.cancel();
+                }
                 new BukkitRunnable() {
                     @Override
                     public void run() {
@@ -413,46 +501,25 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         }
     }
 
+    // Nettoyage des lapins restés dans le monde de l'événement (arrêt brutal, chunk déchargé avant onDisable).
+    // EntitiesLoadEvent : les entités d'un chunk sont chargées après ChunkLoadEvent, la liste y serait vide.
     @EventHandler
-    public void onChunkLoad(ChunkLoadEvent event) {
-        Chunk chunk = event.getChunk();
-        World cfgWorld = Bukkit.getWorld(config.getString("spawn-zone.world"));
-        if (cfgWorld == null) {
+    public void onEntitiesLoad(EntitiesLoadEvent event) {
+        World cfgWorld = spawnWorld();
+        if (cfgWorld == null || !event.getWorld().equals(cfgWorld)) {
             return;
         }
 
+        // Seuls les lapins de l'événement (reconnus à leur nom) non apparus depuis ce démarrage sont supprimés :
+        // les autres lapins du monde (décor, animaux des joueurs) ne sont pas touchés
         String normalName = colorize(config.getString("custom-name", "Attrape-moi !"));
         String goldenName = colorize(config.getString("golden-rabbit.custom-name", normalName));
-
-        for (Entity ent : chunk.getEntities()) {
-            if (!(ent instanceof Rabbit)) {
-                continue;
-            }
-            Rabbit rabbit = (Rabbit) ent;
-            if (!rabbit.getWorld().equals(cfgWorld)) {
-                continue;
-            }
-
-            String name = rabbit.getCustomName();
-            String uuidStr = rabbit.getUniqueId().toString();
-            boolean isSpawned = spawnedRabbits.contains(uuidStr);
-
-            if (normalName.equals(name)) {
-                if (!rabbit.hasMetadata(METADATA_KEY) || !isSpawned) {
+        for (Entity ent : event.getEntities()) {
+            if (ent instanceof Rabbit rabbit && !spawnedRabbits.contains(rabbit.getUniqueId().toString())) {
+                String name = rabbit.getCustomName();
+                if (normalName.equals(name) || goldenName.equals(name)) {
                     rabbit.remove();
                 }
-                continue;
-            }
-
-            if (goldenName.equals(name)) {
-                if (!rabbit.hasMetadata(METADATA_KEY_GOLDEN) || !isSpawned) {
-                    rabbit.remove();
-                }
-                continue;
-            }
-
-            if (!isSpawned) {
-                rabbit.remove();
             }
         }
     }
@@ -470,6 +537,12 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
 
         @Override
         public boolean canRegister() {
+            return true;
+        }
+
+        // Sans cela, /papi reload désenregistre le placeholder
+        @Override
+        public boolean persist() {
             return true;
         }
 
