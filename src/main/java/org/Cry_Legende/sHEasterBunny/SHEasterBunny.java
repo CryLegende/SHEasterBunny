@@ -34,12 +34,12 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SHEasterBunny extends JavaPlugin implements Listener {
 
@@ -47,13 +47,13 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
     private File dataFile;
     private FileConfiguration dataConfig;
 
-    // UUIDs des lapins en jeu
-    private final Set<String> spawnedRabbits = new HashSet<>();
+    // UUIDs des lapins en jeu (ensemble concurrent : ChunkUnloadEvent arrive depuis le thread du monde du chunk)
+    private final Set<String> spawnedRabbits = ConcurrentHashMap.newKeySet();
     // Marque les lapins dorés (dans le PDC du lapin, plus de FixedMetadataValue)
     private NamespacedKey goldenKey;
 
-    // Timer de despawn
-    private final Map<UUID, BukkitTask> despawnTasks = new HashMap<>();
+    // Timer de despawn (concurrent : retiré aussi depuis le thread du monde au déchargement d'un chunk)
+    private final Map<UUID, BukkitTask> despawnTasks = new ConcurrentHashMap<>();
 
     // Total attrape (historique)
     private final Map<UUID, Integer> caughtRabbits = new HashMap<>();
@@ -477,10 +477,13 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
             return;
         }
         Chunk chunk = event.getChunk();
+        World chunkWorld = chunk.getWorld();
         for (Iterator<String> it = spawnedRabbits.iterator(); it.hasNext(); ) {
             String uuidString = it.next();
             UUID rid = UUID.fromString(uuidString);
-            Entity entity = Bukkit.getEntity(rid);
+            // Recherche dans le monde du chunk seulement (le thread courant en est le propriétaire) : un lapin d'un
+            // autre monde ne correspondait de toute façon pas au test ci-dessous, et le chercher ailleurs croiserait leurs threads
+            Entity entity = chunkWorld.getEntity(rid);
             // Comparaison par coordonnées : pas de création d'objet Chunk pour chaque lapin à chaque déchargement
             if (entity != null && entity.getWorld().equals(chunk.getWorld())
                 && (entity.getLocation().getBlockX() >> 4) == chunk.getX()
