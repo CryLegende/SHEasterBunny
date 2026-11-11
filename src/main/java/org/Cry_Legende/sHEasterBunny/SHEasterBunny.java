@@ -11,6 +11,9 @@ import org.bukkit.Registry;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.PluginCommand;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Entity;
@@ -43,7 +46,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class SHEasterBunny extends JavaPlugin implements Listener {
 
-    private FileConfiguration config;
+    // Remplacé par /sheasterbunny reload, lu aussi depuis les fils des mondes
+    private volatile FileConfiguration config;
+    private Messages messages;
+    private BukkitTask spawnTask;
     private File dataFile;
     private FileConfiguration dataConfig;
 
@@ -77,6 +83,8 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         goldenKey = new NamespacedKey(this, "golden");
         saveDefaultConfig();
         config = getConfig();
+        messages = new Messages(this);
+        messages.load();
         loadData();
 
         Bukkit.getPluginManager().registerEvents(this, this);
@@ -88,13 +96,14 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
             getLogger().warning("PlaceholderAPI non trouve. Le hook ne sera pas enregistre.");
         }
 
-        int interval = config.getInt("spawn-interval-ticks", 400);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                spawnRabbits();
-            }
-        }.runTaskTimer(this, 0, interval);
+        scheduleSpawn();
+
+        PluginCommand command = getCommand("sheasterbunny");
+        if (command != null) {
+            AdminCommand admin = new AdminCommand(this);
+            command.setExecutor(admin);
+            command.setTabCompleter(admin);
+        }
 
         new BukkitRunnable() {
             @Override
@@ -105,6 +114,74 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
                 }
             }
         }.runTaskTimer(this, 200L, 200L);
+    }
+
+    /** (Re)lance la tâche d'apparition avec l'intervalle de spawn-interval-ticks. */
+    private void scheduleSpawn() {
+        if (spawnTask != null) {
+            spawnTask.cancel();
+        }
+        int interval = config.getInt("spawn-interval-ticks", 400);
+        spawnTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                spawnRabbits();
+            }
+        }.runTaskTimer(this, 0, interval);
+    }
+
+    Messages messages() {
+        return messages;
+    }
+
+    /**
+     * Relit config.yml et messages.yml. Les deux fichiers sont lus avant de remplacer quoi que ce soit : si l'un est
+     * invalide, l'ancienne configuration reste active. data.yml n'est pas touché.
+     *
+     * @return null si tout est rechargé, sinon le fichier et l'erreur
+     */
+    String reloadAll() {
+        try {
+            new YamlConfiguration().load(new File(getDataFolder(), "config.yml"));
+        } catch (IOException | InvalidConfigurationException e) {
+            return "config.yml : " + Messages.describe(e);
+        }
+        YamlConfiguration loadedMessages;
+        try {
+            loadedMessages = messages.read();
+        } catch (IOException | InvalidConfigurationException e) {
+            return "messages.yml : " + Messages.describe(e);
+        }
+        reloadConfig();
+        config = getConfig();
+        messages.apply(loadedMessages);
+        scheduleSpawn();
+        return null;
+    }
+
+    /** /sheasterbunny info : lapins attrapés au total et aujourd'hui par un joueur (en ligne ou non). */
+    void sendInfo(CommandSender sender, String name) {
+        Player online = Bukkit.getPlayerExact(name);
+        // Jamais Bukkit.getOfflinePlayer(String) : il interroge Mojang et renvoie l'UUID premium, pas celui du réseau
+        UUID id = online != null ? online.getUniqueId()
+            : UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
+        String shown = online != null ? online.getName() : name;
+        resetDailyIfNeeded();
+        int total = caughtRabbits.getOrDefault(id, 0);
+        int daily = dailyCaughtRabbits.getOrDefault(id, 0);
+        if (online == null && total == 0 && daily == 0) {
+            messages.send(sender, "info-no-data", "player", shown);
+            return;
+        }
+        boolean limited = config.getBoolean("daily-limit.enabled", false);
+        int max = config.getInt("daily-limit.max-per-day", 200);
+        boolean unlimited = !limited || max < 0;
+        messages.send(sender, "info",
+            "player", shown,
+            "total", String.valueOf(total),
+            "daily_count", String.valueOf(daily),
+            "daily_max", unlimited ? "INF" : String.valueOf(max),
+            "daily_remaining", unlimited ? "INF" : String.valueOf(Math.max(0, max - daily)));
     }
 
     @Override
@@ -231,8 +308,8 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
     }
 
     private String formatMessage(String path, Player player, int dailyCount, int maxDaily) {
-        String raw = config.getString(path, "");
-        if (raw == null || raw.isEmpty()) {
+        String raw = messages.raw(path);
+        if (raw.isEmpty()) {
             return "";
         }
 
@@ -469,12 +546,12 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
 
         if (rewardsAllowed) {
             int newDaily = dailyCaughtRabbits.getOrDefault(player.getUniqueId(), 0);
-            String catchMsg = formatMessage("messages.rabbit-caught", player, newDaily, maxDaily);
+            String catchMsg = formatMessage("rabbit-caught", player, newDaily, maxDaily);
             if (!catchMsg.isEmpty()) {
                 player.sendMessage(catchMsg);
             }
         } else if (shouldSendDailyLimitMessage(player)) {
-            String msg = formatMessage("messages.daily-limit-reached", player, currentDaily, maxDaily);
+            String msg = formatMessage("daily-limit-reached", player, currentDaily, maxDaily);
             if (!msg.isEmpty()) {
                 player.sendMessage(msg);
             }

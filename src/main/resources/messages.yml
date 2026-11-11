@@ -1,0 +1,26 @@
+# Messages de SHEasterBunny. Couleurs avec &. Un message vide n'est pas envoyé.
+# Format des messages de commande : &7&l« &<c>&lSH &8&l» &7texte (&a succès, &e info, &c erreur).
+
+# Envoyé au joueur à chaque lapin attrapé.
+# Variables : %daily_count%, %daily_max%, %daily_remaining%, %player%
+rabbit-caught: ""
+
+# Envoyé au joueur qui a atteint daily-limit.max-per-day (au plus une fois par daily-limit.message-cooldown-seconds).
+# Mêmes variables que rabbit-caught.
+daily-limit-reached: "&7&l« &d&lEaster &8&l» &fTu as atteint la limite journaliere (&d%daily_max% lapins&7). Reviens demain."
+
+# /sheasterbunny
+# %subs% : sous-commandes que l'expéditeur a le droit d'utiliser.
+no-permission: "&7&l« &f&lSH &8&l» &fCommande inconnue, essayez autre chose."
+usage: "&7&l« &e&lSH &8&l» &7Utilisation : &e/sheasterbunny <%subs%>&7."
+usage-info: "&7&l« &e&lSH &8&l» &7Utilisation : &e/sheasterbunny info <joueur>&7."
+reloaded: "&7&l« &a&lSH &8&l» &7Configuration et messages &arechargés&7."
+# %error% : le fichier et la cause. L'ancienne configuration reste active.
+reload-failed: "&7&l« &c&lSH &8&l» &7Rechargement annulé, l'ancienne configuration reste active : &c%error%&7."
+# %player% : pseudo saisi.
+info-no-data: "&7&l« &e&lSH &8&l» &7Aucun lapin attrapé par &e%player% &7(pseudo inconnu ou jamais joué)."
+# %player%, %total% : lapins attrapés au total, %daily_count% : attrapés aujourd'hui, %daily_max% : limite du jour (INF sans limite),
+# %daily_remaining% : lapins qu'il peut encore attraper avec récompense aujourd'hui (INF sans limite).
+info:
+  - "&7&l« &e&lSH &8&l» &7Lapins de &e%player%&7 : &e%total% &7au total"
+  - "&8• &7Aujourd'hui : &e%daily_count%&7/&e%daily_max% &7(reste &e%daily_remaining%&7)"

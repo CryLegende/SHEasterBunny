@@ -2,10 +2,22 @@
 #
 # Événement de Pâques : des lapins apparaissent dans la zone spawn-zone du monde indiqué et s'attrapent d'un clic
 # droit. Chaque lapin attrapé lance les commandes de commands (golden-rabbit.commands pour un lapin doré) et compte
-# pour le joueur ; daily-limit plafonne les récompenses par joueur et par jour. Pas de commande ni de permission.
+# pour le joueur ; daily-limit plafonne les récompenses par joueur et par jour.
+#
+# Commandes :
+#   /sheasterbunny reload          Relit config.yml et messages.yml (zone, intervalle, limite, récompenses, textes).
+#                                  Si un fichier est invalide, l'ancienne configuration reste active. data.yml n'est pas touché.
+#   /sheasterbunny info <joueur>   Lapins attrapés au total et aujourd'hui, limite et reste du jour.
+#
+# Permissions :
+#   sheasterbunny.admin           Toutes les commandes ci-dessous (op par défaut).
+#   sheasterbunny.admin.reload    /sheasterbunny reload (op par défaut).
+#   sheasterbunny.admin.info      /sheasterbunny info (op par défaut).
 #
 # Placeholders (PlaceholderAPI) :
 #   %sheasterbunny_rabbits%   Nombre de lapins attrapés par le joueur.
+#
+# Les messages sont dans messages.yml.
 #
 # Plusieurs serveurs de jeu : les lapins ne s'attrapent que dans le monde Easter, hébergé par un seul Opale. Ne poser
 # le plugin que sur celui-là : data.yml (totaux et compteur du jour) n'a ainsi qu'un seul serveur qui l'écrit, et la
@@ -33,11 +45,6 @@ daily-limit:
   message-cooldown-seconds: 60 # secondes
 
 custom-name: "&7Attrape-moi !"
-
-messages:
-  # Variables: %daily_count%, %daily_max%, %daily_remaining%, %player%
-  rabbit-caught: ""
-  daily-limit-reached: "&7&l« &d&lEaster &8&l» &fTu as atteint la limite journaliere (&d%daily_max% lapins&7). Reviens demain."
 
 # Commande à exécuter lors du clic sur un lapin (s’exécute depuis la console)
 commands: 

@@ -22,14 +22,34 @@ Utilisé sur : **Opale**.
 
 - Obligatoires : `PlaceholderAPI`
 
+## Commandes
+
+| Commande | Description | Permission |
+|---|---|---|
+| `/sheasterbunny reload` | Relit `config.yml` et `messages.yml` (zone, intervalle, limite du jour, récompenses, textes). Si un fichier est invalide, l'ancienne configuration reste active ; `data.yml` n'est pas touché. | `sheasterbunny.admin.reload` |
+| `/sheasterbunny info <joueur>` | Lapins attrapés au total et aujourd'hui, limite et reste du jour. | `sheasterbunny.admin.info` |
+
+Sans argument, la commande affiche les sous-commandes que l'expéditeur a le droit d'utiliser. Elle marche depuis la console.
+
+## Permissions
+
+| Permission | Description | Par défaut |
+|---|---|---|
+| `sheasterbunny.admin` | Toutes les commandes d'administration. | `op` |
+| `sheasterbunny.admin.reload` | `/sheasterbunny reload`. | `op` |
+| `sheasterbunny.admin.info` | `/sheasterbunny info <joueur>`. | `op` |
+
 ## Configuration
 
 Fichiers par défaut repris du serveur (secrets remplacés par `CHANGE_ME`). Cliquez sur un fichier pour l'ouvrir :
 
 <pre>
 plugins/SHEasterBunny/
-└── <a href="src/main/resources/config.yml">config.yml</a>
+├── <a href="src/main/resources/config.yml">config.yml</a>     zone, intervalle, limite du jour, récompenses, sons
+└── <a href="src/main/resources/messages.yml">messages.yml</a>   textes joueurs et de la commande
 </pre>
+
+Si `messages.yml` n'existe pas au démarrage, il est créé à partir de l'ancienne section `messages:` de `config.yml` (textes du serveur conservés) ; cette section n'est plus lue ensuite.
 
 ## Plusieurs serveurs de jeu
 
