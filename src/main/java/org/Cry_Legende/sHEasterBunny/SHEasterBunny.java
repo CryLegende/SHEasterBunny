@@ -300,9 +300,18 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
         double minZ = Math.min(configMinZ, configMaxZ);
         double maxZ = Math.max(configMinZ, configMaxZ);
 
+        Location fallback = null;
         for (int attempt = 0; attempt < 20; attempt++) {
             int x = (int) (minX + Math.random() * (maxX - minX + 1));
             int z = (int) (minZ + Math.random() * (maxZ - minZ + 1));
+            // Chunk non chargé : le lire le chargerait depuis le disque sur le thread principal, pour un lapin que
+            // personne ne verrait et qui serait retiré au déchargement du chunk
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = new Location(world, x + 0.5, minY + 0.5, z + 0.5);
+            }
             for (int y = maxY; y >= minY; y--) {
                 Block ground = world.getBlockAt(x, y, z);
                 if (!ground.getType().isAir()) {
@@ -315,21 +324,25 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
                 }
             }
         }
-
-        int x = (int) (minX + Math.random() * (maxX - minX + 1));
-        int z = (int) (minZ + Math.random() * (maxZ - minZ + 1));
-        return new Location(world, x + 0.5, minY + 0.5, z + 0.5);
+        // null quand aucun essai n'est tombé dans un chunk chargé : pas de lapin ce cycle-ci
+        return fallback;
     }
 
     /**
      * Gere le spawn des lapins, incluant backlog de respawns.
      */
     public void spawnRabbits() {
+        World world = spawnWorld();
+        // Personne dans le monde de l'événement : aucun lapin à attraper, et ses chunks ne sont pas chargés
+        if (world == null || world.getPlayerCount() == 0) {
+            return;
+        }
         spawnedRabbits.removeIf(uuid -> Bukkit.getEntity(UUID.fromString(uuid)) == null);
 
         if (pendingRespawns > 0) {
-            spawnOneRabbit();
-            pendingRespawns--;
+            if (spawnOneRabbit()) {
+                pendingRespawns--;
+            }
             return;
         }
 
@@ -343,13 +356,16 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
     /**
      * Logique de spawn d'un seul lapin.
      */
-    private void spawnOneRabbit() {
+    private boolean spawnOneRabbit() {
         World world = spawnWorld();
         if (world == null) {
-            return;
+            return false;
         }
 
         Location spawnLocation = getValidSpawnLocation(world);
+        if (spawnLocation == null) {
+            return false;
+        }
         Rabbit rabbit = world.spawn(spawnLocation, Rabbit.class);
 
         String normalName = colorize(config.getString("custom-name", "Attrape-moi !"));
@@ -387,6 +403,7 @@ public class SHEasterBunny extends JavaPlugin implements Listener {
             }
         }.runTaskLater(this, 10 * 60 * 20L);
         despawnTasks.put(rid, task);
+        return true;
     }
 
     @EventHandler
