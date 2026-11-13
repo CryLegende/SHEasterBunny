@@ -53,10 +53,10 @@ Si `messages.yml` n'existe pas au démarrage, il est créé à partir de l'ancie
 
 ## Plusieurs serveurs de jeu
 
-Les lapins apparaissent dans la zone `spawn-zone` du monde `Easter`, et c'est le seul endroit où on peut les attraper. Quand les joueurs sont répartis sur plusieurs Opale, ce monde n'est hébergé que par un seul d'entre eux (celui du spawn et des événements) : un joueur qui y entre depuis un autre Opale est envoyé sur celui-là. Le plugin ne doit donc tourner que sur cet Opale :
+Les lapins apparaissent dans la zone `spawn-zone` du monde indiqué, et c'est le seul endroit où on peut les attraper. Quand les joueurs sont répartis sur plusieurs serveurs de jeu, ce monde n'est hébergé que par un seul d'entre eux : un joueur qui y entre depuis un autre serveur est envoyé sur celui-là. Le plugin ne doit donc tourner que sur ce serveur :
 
-- `data.yml` (lapins attrapés au total, compteur du jour par joueur) n'a qu'un seul serveur qui l'écrit : la limite `daily-limit.max-per-day` ne se contourne pas en changeant d'Opale ;
-- sur les autres Opale, `%sheasterbunny_rabbits%` n'existe pas : le plugin y est absent, il n'y a donc pas de compteur à 0 qui viendrait écraser les vrais totaux dans un classement partagé ;
+- `data.yml` (lapins attrapés au total, compteur du jour par joueur) n'a qu'un seul serveur qui l'écrit : la limite `daily-limit.max-per-day` ne se contourne pas en changeant de serveur ;
+- sur les autres serveurs, `%sheasterbunny_rabbits%` n'existe pas : le plugin y est absent, il n'y a donc pas de compteur à 0 qui viendrait écraser les vrais totaux dans un classement partagé ;
 - rien n'est partagé, il n'y a ni base ni bus à configurer et SHNetwork n'est pas utilisé.
 
 ## Compilation

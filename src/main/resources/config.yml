@@ -19,19 +19,19 @@
 #
 # Les messages sont dans messages.yml.
 #
-# Plusieurs serveurs de jeu : les lapins ne s'attrapent que dans le monde Easter, hébergé par un seul Opale. Ne poser
-# le plugin que sur celui-là : data.yml (totaux et compteur du jour) n'a ainsi qu'un seul serveur qui l'écrit, et la
-# limite du jour ne se contourne pas en changeant d'Opale. Rien à synchroniser, SHNetwork n'est pas utilisé.
+# Plusieurs serveurs de jeu : les lapins ne s'attrapent que dans le monde indiqué dans spawn-zone, hébergé par un seul
+# serveur. Ne poser le plugin que sur celui-là : data.yml (totaux et compteur du jour) n'a ainsi qu'un seul serveur qui
+# l'écrit, et la limite du jour ne se contourne pas en changeant de serveur. Rien à synchroniser, SHNetwork n'est pas utilisé.
 
 # Configuration de la zone de spawn
 spawn-zone:
-  world: Easter
-  min-x: 13
-  max-x: -11
-  min-y: 75
-  max-y: 80
-  min-z: -199
-  max-z: -180
+  world: world
+  min-x: -10
+  max-x: 10
+  min-y: 70
+  max-y: 75
+  min-z: -10
+  max-z: 10
 
 # Nombre maximum de lapins simultanés
 max-rabbits: 30
@@ -41,15 +41,15 @@ spawn-interval-ticks: 250
 
 daily-limit:
   enabled: true
-  max-per-day: 350
+  max-per-day: 100
   message-cooldown-seconds: 60 # secondes
 
 custom-name: "&7Attrape-moi !"
 
 # Commande à exécuter lors du clic sur un lapin (s’exécute depuis la console)
 commands: 
-  - "points give %player% 1"
-  - "tournament custom LAPIN %player%"
+  - "give %player% carrot 1"
+  - "xp add %player% 5 points"
 
 # Son à jouer lors du clic sur un lapin (nom de l’énumération Sound)
 click-sound: ENTITY_FIREWORK_ROCKET_BLAST
@@ -64,5 +64,5 @@ golden-rabbit:
   chance: 0.05
   custom-name: "&eAttrape-moi !"
   commands:
-    - "points give %player% 10"
-    - "tournament custom LAPIN %player%"
+    - "give %player% golden_carrot 1"
+    - "xp add %player% 50 points"
